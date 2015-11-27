@@ -1,0 +1,438 @@
+<!--
+  Copyright Tom Lodge
+
+-->
+
+<script type="text/x-red" data-template-name="publish">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+
+    <div class="form-row" id="node-row-buttontype">
+      <label for="node-input-buttontype"><i class="fa fa-tasks"></i> Type</label>
+      <select type="text" id="node-input-buttontype" style="width:72%;">
+        <option value="information">information</option>
+        <option value="action">action</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="node-input-description"><i class="fa fa-tag"></i> Description</label>
+      <textarea type="text" id="node-input-description" placeholder="Description" rows="3" style="width:70%;"></textarea>
+    </div>
+
+    <div class="form-row node-input-rule-container-row" style="margin-bottom: 0px;">
+        <div id="node-input-rule-container-div" style="box-sizing: border-box; border-radius: 5px; height: 310px; padding: 5px; border: 1px solid #ccc; overflow-y:scroll;">
+            <ol id="node-input-rule-container" style=" list-style-type:none; margin: 0;"></ol>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <a href="#" class="btn btn-mini" id="node-input-add-rule" style="margin-top: 4px;"><i class="fa fa-plus"></i> add input</a>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="publish">
+    <p>A node for publishing buttons to roomcast.  There are two! types of button</p>
+    <p><strong>information</strong> and <strong>action</strong>.  <i>Information</i> buttons will
+    immediately return some data when the button is pressed (e.g. bus times).  <i>Action</i> buttons
+    will perform some tasks and will (probably) notify the user at a later time with the outcome (e.g report noise)
+    </p>
+</script>
+
+<script type="text/javascript">
+
+    RED.nodes.registerType('publish', {
+
+        color: "#E2D96E",
+
+        category: 'buttons',
+
+        defaults: {
+            name: {value:"",required:true},
+            property: {value:"payload", required:true},
+            rules: {value:[{type:"residents", id:"userids"}]},
+            description: {value:""},
+            buttontype: {value:"information"},
+            returntype: {value:""}
+        },
+        inputs:1,
+        outputs:0,
+        icon: "comment.png",
+        label: function() {
+            return this.name||"publish";
+        },
+
+
+        oneditprepare: function() {
+
+            var node = this;
+            
+            //Present different options based on whether info or action
+            //button 
+
+            node.actionoperators = [
+                                    {v:"userId",t:"user id", type:"creation"},
+                                    {v:"staffselect",t:"staff members",type:"creation"},
+                                    {v:"userselect",t:"residents",type:"creation"},
+                                    {v:"text",t:"text",type:"creation"},
+                                    {v:"developmentId", t:"developmentId",type:"creation"},
+                                    {v:"latlng",t:"development coords",type:"creation"},
+                                    {v:"postcode",t:"development postcode",type:"creation"},
+                                    {v:"datastore",t:"a datastore", type:"creation"},
+
+                                    {v:'freetext', t:'text question', type:"press"},
+                                    {v:'options', t:'options',type:"press"},
+                                    {v:'date', t:'date or time',type:"press"},
+                                    {v:'users', t:'users',type:"press"},
+                                    {v:'signature', t:'signature',type:"press"},
+                                    {v:'datastoreitem', t:'a datastore item',type:"press"},
+                            ];
+
+            
+            node.infooperators = [
+                {v:"userId",t:"user id"},
+                {v:"developmentId", t:"developmentId"},
+                {v:"latlng",t:"development coords"},
+                {v:"postcode",t:"development postcode"},
+                {v:"datastore",t:"items in a datastore"},
+            ];
+
+            //set the default choices to action button parameters.
+            var operators = node.buttontype ? node.buttontype == "information" ? node.infooperators: node.actionoperators : node.actionoperators;
+
+
+            //this is the place where we will take the type selected and create the appropriate values.
+            function generateRule(i,rule) {
+
+                var container = $('<li/>',{style:"background: #fff; margin:0; padding:8px 0px; border-bottom: 1px solid #ccc;"});
+                var row = $('<div/>').appendTo(container);
+
+                //var row2 = $('<div/>',{style:"padding-top: 5px; text-align: right;"}).appendTo(container);
+
+                $('<i style="color: #eee; cursor: move;" class="node-input-rule-handle fa fa-bars"></i>').appendTo(row);
+
+                var selectField = $('<select/>',{class:"node-input-parameter", style:"width:120px; margin-left: 5px; text-align: center;"}).appendTo(row);
+
+                
+                if (node.buttontype === "information"){
+                    console.log("YESS BUTTON TYPE IS INFO!");
+                    for (var d in operators) {
+                        selectField.append($("<option></option>").val(operators[d].v).text(operators[d].t));
+                    }
+                }else{ //optgroups
+                    console.log("YESS BUTTON TYPE IS ACTION");
+                    var creationtime = $("<optgroup/>",{'label':"creation time"});
+                    var presstime = $("<optgroup/>",{'label':"press time"});
+                    
+                    node.actionoperators.filter(function(operator){return operator.type==="creation"}).forEach(function(operator){
+                        creationtime.append($("<option></option>").val(operator.v).text(operator.t));
+                    });
+                    
+                    node.actionoperators.filter(function(operator){return operator.type==="press"}).forEach(function(operator){
+                        presstime.append($("<option></option>").val(operator.v).text(operator.t));
+                    }); 
+                
+                    selectField.append(creationtime);
+                    selectField.append(presstime);
+                }
+                      
+
+                selectField.change(function(){
+                    var val = $(this).val();
+
+                    $(this).siblings().find('.node-input-rule-datastoreitem-value').parent().remove(); 
+                    $(this).siblings().find('.node-input-rule-options-value').parent().remove(); 
+
+                    switch (val){
+                        case "options":
+                            if ( $(this).siblings().find('.node-input-rule-options-value').length <= 0){
+                                var row = $(this).parent();
+                                _add_options_rule(rule,row);
+                            }
+                            break;
+                        
+                        case "datastoreitem":
+                            if ( $(this).siblings().find('.node-input-rule-datastoreitem-value').length <= 0){
+                                var row = $(this).parent();
+                                _add_datastore_item_rule(rule,row);
+                            }
+                            break;
+                    }
+                });       
+                //the id text box, common to all!
+
+                var idField = $('<input/>',{class:"node-input-rule-value",type:"text", placeholder:"id", style:"margin-left: 5px; width: 60px;"}).appendTo(row);
+
+                var spacer = $('<span/>').appendTo(row);
+                
+                //the title text box, common to all!
+                var titleField = $('<input />',{class:"node-input-rule-title-value",type:"text",placeholder:"title", style:"margin-left: 5px; width: 110px;"})
+
+
+                titleField.appendTo(spacer);
+
+                switch(rule.type){
+                    case "options":
+                        _add_options_rule(rule, row);
+                        break;
+                    case "datastoreitem":
+                        _add_datastore_item_rule(rule, row);
+                        break;
+                    
+                    default:
+
+                }
+                
+                //the rule number, common to all
+                
+                var finalspan = $('<span/>',{style:"float: right; margin-top: 3px;margin-right: 10px;"}).appendTo(row);
+                finalspan.append(' &#8594; <span class="node-input-rule-index">'+i+'</span> ');
+
+                var deleteButton = $('<a/>',{href:"#",class:"btn btn-mini", style:"margin-left: 5px;"}).appendTo(finalspan);
+                $('<i/>',{class:"fa fa-remove"}).appendTo(deleteButton);
+
+                deleteButton.click(function() {
+                    container.css({"background":"#fee"});
+                    container.fadeOut(300, function() {
+                        $(this).remove(); //remove the current rule
+
+                        //update the indexes of the children
+                        $("#node-input-rule-container").children().each(function(i) {
+                            $(this).find(".node-input-rule-index").html(i+1);
+                        });
+
+                    });
+                });
+
+                $("#node-input-rule-container").append(container);
+
+                selectField.find("option").filter(function() {
+                    if ($(this).val() == rule.type){
+                        console.log("OK SETTING " + rule.type + " to selected!");
+                    }
+                  return $(this).val() == rule.type;
+                }).attr('selected',true);
+
+                if (typeof rule.id != "undefined") {
+                    idField.val(rule.id);
+                    titleField.val(rule.title || "");
+                }
+                selectField.change();
+
+            }//end of generate rule..
+
+            function _add_options_rule(rule, row){
+               var spacer = $('<span/>').appendTo(row);
+                
+                //the options box
+                var optionsField = $('<input />',{class:"node-input-rule-options-value",type:"text",placeholder:"options", style:"margin-left: 5px; width: 160px;"})
+
+                optionsField.appendTo(spacer);
+
+                if (typeof rule.values != "undefined"){
+                    optionsField.val(rule.values.options || "");
+                }
+
+            }
+
+            function _add_datastore_item_rule(rule, row){
+               var spacer = $('<span/>').appendTo(row);
+                
+                //the options box
+                var datastoreField = $('<input />',{class:"node-input-rule-datastoreitem-value",type:"text",placeholder:"name of datastore", style:"margin-left: 5px; width: 160px;"})
+
+                datastoreField.appendTo(spacer);
+
+                if (typeof rule.values != "undefined"){
+                    if (typeof rule.values.store != "undefined"){
+                        datastoreField.val(rule.values.store.storeId || "");
+                    }
+                }
+            }
+
+            function updateOptionsForAllRules(type){
+
+                $("#node-input-rule-container").children().each(function(i) {
+                    var selectField = $(this).find(".node-input-parameter");
+                    selectField.find("option").remove();
+                    selectField.find("optgroup").remove();
+                    
+                    if (type === "information"){
+                        for (var d in operators) {
+                            var selected = operators[d].v == node.rules[i].type;
+                            selectField.append($("<option></option>", {selected:selected}).val(operators[d].v).text(operators[d].t));
+                        }
+                    }else{ //optgroups
+                        var creationtime = $("<optgroup/>",{'label':"creation time"});
+                        var presstime = $("<optgroup/>",{'label':"press time"});
+                        node.actionoperators.filter(function(operator){return operator.type==="creation"}).forEach(function(operator){
+                            var selected = operator.v == node.rules[i].type;
+                            creationtime.append($("<option></option>", {selected:selected}).val(operator.v).text(operator.t));
+                        });
+                    
+                        node.actionoperators.filter(function(operator){return operator.type==="press"}).forEach(function(operator){
+                             var selected = operator.v == node.rules[i].type;
+                            presstime.append($("<option></option>", {selected:selected}).val(operator.v).text(operator.t));
+                        }); 
+                        selectField.append(creationtime);
+                        selectField.append(presstime);
+                    }                    
+                });
+            }
+
+            function addReturns(){
+              var selected = node.returntype || "";
+              var options = ["tabular", "html", "text", "number", "calendar", "image"];
+              var returnRow =  $('<div/>',{class:'form-row', id:"node-row-returntype"});
+              var label  = $('<label/>',{for:"node-input-returntype"}).appendTo(returnRow);
+              label.html('<i class="fa fa-tasks"></i> Returns');
+              var selectField = $('<select/>', {type:"text", id:"node-input-returntype", style:"width:72%;margin-left: 5px;"}).appendTo(returnRow);
+
+              options.forEach(function(option) {
+                  selectField.append($("<option></option>",{selected:option==selected}).text(option));
+              });
+              //$("#dialog-form").append(returnRow);
+              returnRow.insertAfter("#node-row-buttontype");
+            }
+
+            function removeReturns(){
+              $("#node-row-returntype").fadeOut(300, function() {
+                $(this).remove();
+              });
+            }
+
+            $("#node-input-buttontype").change(function(){
+
+                var buttontype = $(this).val();
+               
+                if (buttontype == "action"){
+                  operators = node.actionoperators;
+                  updateOptionsForAllRules('action');
+                  removeReturns();
+                }else if (buttontype == "information"){
+                  operators = node.infooperators;
+                  updateOptionsForAllRules('information');
+                  addReturns();
+                }
+            });
+
+            $("#node-input-add-rule").click(function() {
+                generateRule($("#node-input-rule-container").children().length+1,{type:"",id:"",title:""});
+                $("#node-input-rule-container-div").scrollTop($("#node-input-rule-container-div").get(0).scrollHeight);
+            });
+
+
+            for (var i=0;i<this.rules.length;i++) {
+                var rule = this.rules[i];
+                generateRule(i+1,rule);
+            }
+
+            function switchDialogResize() {
+                var rows = $("#dialog-form>div:not(.node-input-rule-container-row)");
+                var height = $("#dialog-form").height();
+                for (var i=0;i<rows.size();i++) {
+                    height -= $(rows[i]).outerHeight(true);
+                }
+                var editorRow = $("#dialog-form>div.node-input-rule-container-row");
+                height -= (parseInt(editorRow.css("marginTop"))+parseInt(editorRow.css("marginBottom")));
+                $("#node-input-rule-container-div").css("height",height+"px");
+            };
+
+            $( "#node-input-rule-container" ).sortable({
+                axis: "y",
+                update: function( event, ui ) {
+                    var rules = $("#node-input-rule-container").children();
+                    rules.each(function(i) {
+                        $(this).find(".node-input-rule-index").html(i+1);
+                    });
+                },
+                handle:".node-input-rule-handle",
+                cursor: "move"
+            });
+            $( "#node-input-rule-container .node-input-rule-handle" ).disableSelection();
+
+            $( "#dialog" ).on("dialogresize", switchDialogResize);
+            
+            $( "#dialog" ).one("dialogopen", function(ev) {
+                var size = $( "#dialog" ).dialog('option','sizeCache-switch');
+                if (size) {
+                    $("#dialog").dialog('option','width',size.width);
+                    $("#dialog").dialog('option','height',size.height);
+                    switchDialogResize();
+                }
+            });
+            $( "#dialog" ).one("dialogclose", function(ev,ui) {
+                $( "#dialog" ).off("dialogresize",switchDialogResize);
+            });
+            //bump up the dialog width to 1000
+            $(".ui-widget-content").css({width: 800});
+        },
+
+
+        oneditsave: function() {
+
+            var rules = $("#node-input-rule-container").children();
+            var ruleset;
+            var node = this;
+            node.rules= [];
+            node.returntype = "";
+
+            rules.each(function(i) {
+                var rule = $(this);
+                var type = rule.find("select option:selected").val();
+                var r = {type:type};
+                r.id  = rule.find(".node-input-rule-value").val();
+                r.title = rule.find(".node-input-rule-title-value").val();
+                
+                /* special case if the rule is of type press (i.e) a question asked of a user.  In this
+                case we need to give the question a number and a values object.  In all other cases a
+                rule is just an id,title*/
+              
+                var presses = [];
+
+                if (node.buttontype === "action"){
+                    
+                    var isapress = node.actionoperators.filter(function(item){
+                        return item.type === "press"
+                    }).map(function(item){return item.v}).indexOf(type) != -1;
+
+                    console.log("is a press is ");
+                    console.log(isapress);
+
+                    if (isapress){
+                        r.number = i;
+                    
+                        switch (r.type){
+                            
+                            case "options":
+                                r.values = {
+                                    options: rule.find(".node-input-rule-options-value").val(),
+                                    multiple: "no",
+                                }
+                                break;
+                            
+                            case "datastoreitem":
+                                r.values = {
+                                    store:{
+                                        storeId: rule.find(".node-input-rule-datastoreitem-value").val(),
+                                        name: rule.find(".node-input-rule-datastoreitem-value").val(),
+                                    }
+                                }
+                                break;
+                            
+                            default:
+                                r.values = {};
+                        }
+                    }
+                }
+                console.log("pushing");
+                console.log(r);
+
+                node.rules.push(r);
+            });
+            node.returntype = $("#node-input-returntype option:selected").val();
+        }
+    });
+</script>
