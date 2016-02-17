@@ -74,6 +74,7 @@
 
             node.actionoperators = [
                                     {v:"userId",t:"user id", type:"creation"},
+                                    {v:"user",t:"user", type:"creation"},
                                     {v:"staffselect",t:"staff members",type:"creation"},
                                     {v:"userselect",t:"residents",type:"creation"},
                                     {v:"text",t:"text",type:"creation"},
@@ -93,6 +94,7 @@
             
             node.infooperators = [
                 {v:"userId",t:"user id"},
+                {v:"user",t:"user"},
                 {v:"developmentId", t:"developmentId"},
                 {v:"latlng",t:"development coords"},
                 {v:"postcode",t:"development postcode"},
@@ -117,12 +119,12 @@
 
                 
                 if (node.buttontype === "information"){
-                    console.log("YESS BUTTON TYPE IS INFO!");
+                   
                     for (var d in operators) {
                         selectField.append($("<option></option>").val(operators[d].v).text(operators[d].t));
                     }
                 }else{ //optgroups
-                    console.log("YESS BUTTON TYPE IS ACTION");
+                    
                     var creationtime = $("<optgroup/>",{'label':"creation time"});
                     var presstime = $("<optgroup/>",{'label':"press time"});
                     
