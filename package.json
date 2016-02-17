@@ -1,0 +1,9 @@
+{
+  "name": "node-red-modules",
+  "description": "buttonkit node red modules§",
+  "version": "0.0.1",
+  "dependencies": {
+    "moment": "~2.10.6",
+    "neo4j": "~2.0.0-RC2"
+  }
+}
